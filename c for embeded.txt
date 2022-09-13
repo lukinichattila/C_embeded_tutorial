@@ -1,0 +1,834 @@
+- microcontrolers have specialized memory regions of limited size
+- it is necesary to manage memory regions with its absolute address
+- Execution speed is more critical in embedded systems
+- intrerupt functions are not supported by ansi c
+- datatypes have different sizez depending on the cpu
+- most microcontrolers does  not have support for floating point aritmetic
+- most ansi c libraries are not used in embeded systems (stdio.h)
+- some microcontrolers do not have support for a stack pointer
+- it is necesary to have acces to CPU registers for some operations
+- c compilers must satisfy the folowing inequality: char <=short<=int<=long
+- most compiler adapts the data types to the cpu:in 8 bit microcontrolers int is 8 bit, in 16 bit
+  microcontrolers it has 16 bit , and in 32 bit microcontrolers it has 32 bit
+- special need is with char because its sign depends on compiler settings.The best is signed or unsigned char
+  to clear any eventual doubts in the compiler
+- because of the dependency of data type sizes with the compiler, we shall not use them directly in our code.
+  The best way is to create a header file with typedefs aliasing the data types with other names agreed by the company
+  or project we are working on:
+           #define T_VOID                 void        //value range: n.a         //
+           typedef unsigned char          T_UBYTE;    //value range: 0-255       //
+           typedef signed char            T_SBYTE;    //value range: -127-127    //
+           typedef unsigned short int     T_UWORD;    //value range: 0-65535     //
+           typedef short                  T_SWORD;    //value range:-32767-32767 //
+           typedef unsigned long int      T_ULONG;    //value range 0-4294967294 //
+           typedef long int               T_SLONG;    //value range -2147483647-2147483647//
+           typedef unsigned char          T_BOOL;     //value range : only 0 and 1 allowed
+                                                         0-false/1-True//
+- in embeded c (not automotive) the standard library stdint.h contains definition for different data types that are compatible across
+  diferent systenms: int8_t,uint8_t,int16_t,uint16_t,int32_t,uint32_t,int64_t,uint64_t
+- with the rising use AUTOSAR for code development, there is a standard file used by all AUTOSAR projects
+  with the name AUTOSAR_SWS_PlatformTypes.pdf
+- Most microcontrolers are adressable by bytes.Endiannes refer to the order bytes are stored in datatypes
+                     - Little endian(Intel) Less significant byte is stored in the less significant adress
+                     - Big endian (Motorola) Most significant byte is stored in the less significant address
+                     - a 4 byte variable (32 bit integer) the 4 bytes are stored in 4 bytes of conseccutive adress.
+                       The variable has a hexa value of 0x01020304 and is stored in the adress 0xFF00 this is how the value is stored:
+                       Little endian  0xFF00->byte 04;0xFF01-> byte 03; 0xFF02-> byte 02; 0xFF03 -> byte 01
+                       Big endian     0xFF00->byte 01;0xFF01-> byte 02; 0xFF02-> byte 03; 0xFF01 -> byte 04
+  !!!!!When sending code between microcontrolers, it is important if both have the same memory structure, otherwise byte inversion is needed between
+  little endian and Big endian!!!!!!
+- microcontrolers devide memory space in different regions.In Von Neuman arhitectures there is only one bus to acces memory and data
+  with Harvard arhitecture, there are several buses for code and data
+-Most common memory regions are :  - RAM: Read/write memory; very fast
+                                   - ROM: Only read acces.Not possible to modify(One time programmed)
+                                   - Flash: is like a Rom but it can be writen in larger blocks(1024 or greater).A specialiation knowns as data flash  can be written in smaller blocks(8 or 16 bytes)
+                                   - Eprom - useful to store calibration data.it can be writen in very short blocks(2 or 4 bytes)
+                                   - Special purpose registers(SPR)They are memory mapped registers, used to control peripheral devices embedded in the microcontroler
+                                   - STACK - Ram areas to implement stack
+                                   - Heap : Ram area reserved for dinamic memory allocation
+                                   - intrerrupts vectors tableRom or ram area reserved tostore the intrerupts vector table
+Working with different memory regions depends on the compiler.It can be through pragmas or non ansi reserved words.General rules are:
+                      - Any global variable goes in the RAM
+                      - Any function code orconstant variable  goes in ROM(FLASH)
+                      - Any local variable goes in the STACK, even for constant local variables
+                      - Any static local variable goes in RAM, and if constant, goes in ROM(FLASH)
+                      - to put a function in banked code area  (HCS12 microcontroler) the banked keyword is needed
+                                void _banked myfunction(void)
+                      in many situation it is necesarry to place variables in absolute adresses:
+                                #pragma location=0x200;
+                                int counter                        <- with codeewarrior compiler
+
+                                int counter @0x200;                <- with IAR compiler
+It is posible to define own memory regions.For that we need the linker.Usualy in C we denote that the variable belongs to a region, and we later use the linker
+to allocate the region to a specific adress in the memory map.term section or segment denote the same thing.
+                       #pragma  location ="Vars"
+                       int var;
+                       #pragma location="Funcs"
+                       int fun(int a){return a+3;}       <- IAR compiler
+
+                       #pragma DATA_SEG  SHORT "Vars"    <- Code warrior, hcs08
+                        int var;
+                        #pragma CODE_SEG FAR "Funcs"
+                        int fun (int a)
+                        {return a+3;}
+Pointers: when working with memory regions, it is necesarry to use special identifiers to denote the memory region pointed
+                        - Old pc's used near pointers (16 bits) and far pointers (32 bits)
+                        - HCS 12's have a _near pointer(8biti) and _far pointer (16bits)
+                        - the pic18 have special rom(near pointer 16 bit, far pointer 24 bit) and ram(16biti) pointers.8bits used for the adressing of memory and 8 bit is used for offset(from the begining of the memory)
+                        --!!char* adress=(char*)0x342567;    <- cast an int number to a char pointer if we want a number to be an adress.the number is not stored in char , it is
+                                                                the value of an adress of type char
+With autosar, a mechanism called MEMMAP (Autosar_SWS_MemoryMApping.pdf) and the compiler abstruction (AUTOSAR_SWS_Compiler abstraction.pdf) is implemented to make portable all
+the pragmas and non reserved keywords that could be used for microcontroler:
+                            - Memap use example:
+                            #define EEP_START_SC_VAR_INIT_16
+                            #include "Memmap.h"
+                            static uint16 EepTimer=100;
+                            static uint16 EepRemainingBytes=16;
+                            #define EEP_STOP_SEC_VAR_INIT_16
+                            #include "MemMap.h"
+
+                            - For ex. SWC
+                            #define Abc_START_SEC_CODE
+                            #include "Abc_Memmap.h"
+                            //write code here//
+                            #define Abc_Stop_Sec_Code
+                            #include "Abc_Memmap.h"
+
+                            - Memmap contents example
+                            #ifdef RTE_START_SEC_VARS_FAST_TASK_BUF_8
+                            #pragma section nearbss "data_near_fast_8"
+                            #pragma section neardata "data_near_fast_8"
+                            .........
+                            #undef RTE_START_SEC_VAR_FAST_TASK_BUF_8
+                            #ifdef RTE_STOP_SEC_VAR_FAST_TASK_BUF_8
+                            #pragma section_code "illegal"
+                            #undef RTE_STOP_SEC_VAR_FAST_TASK_BUF_8
+Example of compiler abstractions , used to hide special keywords.Compiler abstractions are included with file Compiler.h and configured in Comiler_Cfg.h
+                            - Example (Cosmic, S12X):
+                            #define <PREFIX>_CODE     @near
+                            #define FUNC (rettype,memclass) memclass rettype
+                            - Required usage for function declaration and definition:
+                            FUNC(void, <PREFIX>_CODE Example Function(void)
+                            - Example (Cosmic S12x):
+                            #define CONST (type, memclass) memclass const type
+                            - Required usage for declaration and definition:
+                            CONST(uint8, NVM_CONST)NvM_ConfigurationDAta;
+                            - Example (ST10)
+                            #define VAR(type,memclass) memclass type
+                            - Required usage for declaration and definition:
+                            #define NVM_FAST_VAR_near
+                            Var(uint8, NVM_FAST_VAR) NvM_VeryFrequentlyUsedState;
+
+Memory Handling  - Access modifier:
+"auto " modifier - is the default modifier for local variables, and it is not written anymore.
+                   All local variables are automatic by default and alocated on the stack.
+                   Automatic means they are destroyed as soon as their scope is ended
+                 - Local variables allow  of RAM saving.They are limited only by the STACK size and the functions call tee
+                   Carefull about declaring long buffers as local
+                   int calculate (int a, int b){
+                       int c=a+b;
+                       return c*c;
+                       }
+"static" modifier - !!Statics and global variables are always created on the FLASH!! - it has 3 main uses:             (are assigned space in the body of the program when the compiler creates the executable)
+                           - for a global variable , it makes the variable "private" inside the owner module(file)
+                           - for a function, it makes the function to be "private"  inside the owner module(file)
+                           - for a local variable it makes the variable private inside the owner function(file).
+						   - static variables or functions defined in .h files and included in .c files are visible in the .c
+						   - static functions are declared and defined in .c files
+                           - the static local variable is not anymore automatic, must be treated like a global variable
+                             only visible by the owning function.
+                             static int counter(void){             <- is only visible in the module it is defined
+                                static int counter=0;              <- is only visible in the counter function, but acts like a global variable because it is not alocated on the stack
+                                counter++;
+                                return counter;}
+"const" modifier - it denotes that a variable is read only .it must be initialized in its declaration;
+                       const int days of week =7;      <- allocated on the flash  - global constant
+                       static const int =7;            <- allocated on the flash  - private constant
+                       void a_function(void){
+                           const int minutes per day = 24*60;   <- local constant, alocated on the stack
+                           static const int seconds_per_minute=60; <- static local constant. allocated in the flash
+In AUTOSAR we use compiler abstraction macros to declare constant pointers
+        char * ptr=&var;          - pointers and object is not constant (autosar P2VAR)
+        const char * ptr =&var;   - object is constant , pointer is not constant (AUTOSAR P2CONST)
+        char * const ptr = &var   - Object is not constant, pointer is constant (AUTOSAR CONST2P2VAR)
+        const char * const ptr= &var - Object and pointer are constant (AUTOSAR CONSTP2CONST)
+
+int calculate (int *const val1, const int *val2){
+              int c=45;
+              val1=&c;  <- not allowed, val 1 is constant pointer
+              *val1=c; valid, the value pointed by val 1 is not constant
+              *val2=c  <- not allowed the value pointed by val 2  is constant
+              c=*val2 - ok, wecan read the value
+              val2=&c   <- valid, val2 pointer is not constant
+              return c;}
+
+              const int a;
+              void dosomething(void){
+              int *aPtr=&a;
+              int *aPtr=(int^) &a;          <- compiler allows this
+              *aPtr=20;     <- wrong
+              }
+"volatile" modifier - it is used to indicate that a variable can be writen outside the normal execution Flow of the program( can be accesed by an intrerupt)
+                    - it forces the compiler to always read the variable from RAM, and to not backup the variable in registers or flash(compiler optimization faults)
+                    - it is frequently used inside intrerupt routines and external io registers
+                    - every variable that has unexpected change in its value should have volatile status
+					- There are inherently dual uses for volatile, either to disregard optimization offered by the compiler for that variable, or to refrain from using 
+					  the prefetched copy of that variable except for the one in RAM. The static volatile is the combination of both behaviors, persistence of that variable in RAM beyond any optimization.
+                    Potential areas of application:
+                         Flash programming
+						 Cyclical buffers
+						 Ring buffers
+                         Concurrency and multiprocessing/multithreading
+                      ex. memory mapped peripheral registers of the microcontrolers
+                          multiple tasks accesing global variable(read,write) in an RTOS multithreaded aplication
+                          when a global variable is used to share data between the main code and the Intrerupt service routine
+                     - use cases: non volatile pointer to volatile data:
+                                  ex. uint8_t volatile *pStatusReg; pstatusreg is a non volatile pointer pointing to a volatile data(perfect to accessing memory mapped registers)
+
+                                  this syntax good for accessing memory mapped registers(most cases used)
+                                  volatile pointer to non volatile data - rarely used
+                                  ex. uint8_t *volatile pstatusreg;   <- pstatusreg is a volatile pointer pointing to a non volatile data
+                                  volatile pointer to volatile data:
+                                  ex. uint8_t volatile * volatile pstatusreg
+                                  ex. in a for cycle where we want to make a little delay by dummycounting , the compiler will ignore the dummycount because it optimies it
+                                      the increment variable needs to be declared volatile inside the for function: ex. For(volatile uint32_t i=0;i<50000;++i)
+
+"volatile" and pointers:- usually pointers are not combined with volatile
+"extern" modifier - it is used to declare that a variable or function is defined outside of a module.Variables or functions with the modifier static cannot be
+                     made public with the extern modifier.the extern modifier is ony used in declarations, never in definitions.Function headers could optionaly
+                     have the extern or not but the best practice is to use extern modifier.External declarations usually goes in a C header file
+                     This comes in useful when you have global variables. You declare the existence of global variables in a header, so that each source file
+                     that includes the header knows about it, but you only need to “define” it once in one of your source files.
+
+                     extern int public-var; <- extern declaration, do not initialize
+                     int public_var=20;        <- definition , it is usually in a header file
+                     extern void interface (int a);      <- the extern is optional but a good practice  to put it
+                     extern int myarray[];             <- array size is optional in declarations
+                     int myarray[20]                   <- good practice to document the size also in a header file
+"Data types" - dont mix in a statement multiple type of variables
+             - if debug variable exists, use clear names for it, crosscheck the preprocessed code, use preprocessor directives (#ifdef,#warning, etc)
+             - void can be 3 types: function returns void, function argument void and pointer void
+             - void *malloc() returns a void type pointer which can be cast to any type!!
+             - defining a constant with the #define qualifier puts the variable in ROM.
+             - the volatile qualifier tells the compiler that the variable is better put in the register of a CPU where can be changed fast rather on stack
+               because it will be changed by an intrerrupt
+             - for boolean and bitmask constants use cdef.h(Continental specific type and constant definitions)
+             - instead of using numbers (for (i=0; i<33, i++)  33 should be changed with a #define directive
+             - enum statements map names to num bers internaly
+             - defining constants   #define c(unsigned char)2;#define s(unsigned short) 3; #define (unsigned long) 4; volatile unsigned char ch
+             - using const declaration to define numbers is not suggested as it puts it in a Read only region of storageconsuming memory.
+             - use sufixes to clearly define types: u,U for unsigned, l,L(prefer L) for long, f,F float
+             - the conditional operator(?) should be used with simple assignment, avoid nesting (multiple ? in same statement), should be used as an assignment not if then else
+               ex. a==1?func1():func2() , dont use it in a mcaro
+"Arrays" : - Is a memory region, where values of the same types are located.The access to this values are through an index
+           - There is a relationship between arrays and pointers.The name of the array is the adress of its first element
+           - in C it is not a syntax error to access array elements using negativ numbers!!
+           - it is posible to create typedefs for arrays.However chose a good name for it, because it will lokk like a variable decclaration:
+                                                   typedef int ARRAY[5];
+                                                   Array array1;
+           - on some cpu arhitecture accessing arrays through pointers can be faster
+           - arrays are initialized with a fixed number!!If they are static then  the number of elements must be declared with a constant expression
+"Structures" - encapsulates variables with different type.acces to this types are through the "." operator
+             - the name of the struct is pointer to its start adress
+                                     typedef struct Employee{         or struct Employee{
+                                        int age;                                 int age;
+                                        char name [20];                          char name [20];
+                                        };                                       }
+                                     Employee Ion{5,"Vasile"};           Employee Ion;}
+                                     Ion.age=20;
+              - structures have problems with spreading memory.they leave memory holes between their members.
+                some CPU arhitectures do not allow misaligned acces, others do, but with more acces time
+                      typedef struct TAG_POINT{        <- this structure has 12 bits in lenght , in a 32 bit arhitecture 20 bits are left empty
+                           int x;
+                           char y;
+                           int z;}Point;
+               to avoid field misalignment like the upper, start with the larger fields first , then continue with the smaller(long ->short->char)
+               always make explicit any hole inside the memory space of the structure declaring an array instead of a variable so it can fill up the space
+              - structures are not a good idea to pass to functions, as the structure has to be copied on the stack.Instead pass by reference or with pointer
+                (use const modifier to make explicit when we only want ot read the structure, and use the -> operator to acces the members)
+              - do not return a structure, it is very inneficient
+              - structures can be initialized with the folowing alternative :
+              struct carmodel{uint32 caryear;unit32 carweight;uint16 carspeed};     struct carmodel BMW={.caryear=2021,.carweight=2033,.carspeed=4321};
+              - when we have a pointer to a structure, we use the -> operator to acces the member elements:
+                ex. struct Structtype *pointertostruct;
+                    pointertostruct=&structure;
+                    pointertostruct->structureelement=value;        (equivalent to *pointertostruct=value;)
+              - when using the direct structure name to acces structure elements with".",when accesing with pointers with "->"
+              - sending structures to functions like arguments :
+                ex.struct Structname{int a;int b;int c;int d};
+                   struct Structname data{1,3,2,5};
+                   dispfunction(&data);                     <- calling function with struct argument.data is a structure
+                   void dispfunction(struct Structname *mystruct){  <= function definition
+                        mystruct->a=5;}
+              - we can inherit/extend structures:
+	           Ex. struct astructure{
+	             int a{8};
+	             int b{45};
+                  }Myonestructure;
+               struct twostructure:astructure{
+                 int c{34};
+                 int d{76};
+                   }Mytwostructure;      <- mytwostructure.a , .c, .d
+			  - we can store functions in a structure:
+	            Ex. struct jh{
+	              int a{8};
+	              int b{45};
+	              void sum(int x){
+		          std::cout<<a;};
+                  }Myjh;
+    - we can force the compiler to not byte pad a structure with:
+      	
+Decoding of bitfields to a structure:
+--------------------------------------------------------------------------------
+     Suposedly we have a 32 bit packet with folowing fields:
+     MSB->(Addrmode-1bit)-(shortaddr-2bit)-(long adr-8bit)-(sensor-3bit)-(bat-3bit)-(Payload-12bit)-(status-1bit)-(crc-2bit)<-LSB  (32bit)
+     - we can have the folowing structure:
+          ex. struct Packet{
+                            uint32_t crc      :2;
+                            uint32_t status   :1;
+                            uint32_t payload  :12;
+                            uint32_t bat      :3;
+                            uint32_t sensor   :3;
+                            uint32_t longadr  :8;
+                            uint32_t shortaddr:2;
+                            uint32_t addrmode :1;}
+     - if we have a packet that exceeds 32 bit like 41 , we can make an aditional field that accomodate the rest of the bits:
+          ex. struc Packet{
+                            uint32_t data            :27;
+                            uint32_t payloadlowbits  :5;
+                            uint32_t payloadhibits   :9;}  <- when recomposing payload=(payloadhibits<<5)|payloadlowbits
+     - peripheral registers  that access the gpios through bits encoded in 32 bits or other makes sense to make them a struct
+       with every bit a struct bit field , and then later make functions that modify the bit fields, and then the user call
+       the functions that make the modifications(every bitfield uint32_t  name:1;)
+       ex: typedef struct GPIOX_MODE{
+                           uint32_t pin0:2;
+                           uint32_t pin1:2;
+                           .
+                           .
+                           uint32_t pin16:2;}
+            GPIOX_MODE volatile  *const pGpioMode=(GPIOX_MODE*) 0x40020C00;        <- initialise the pointer of GPIOX_MODE type to base adress
+            pGpioMode->pin0=0x1;                                   <- set the bit location which is incremented from the base address with the
+                                                                      structure elements bit size(atention to endianess?)
+"Pointers"    - a pointer is a data type that holds an adress
+              - if we cast a pointer from a bigger size to a smaller one it will hold the last bytes from bigger type:
+                ex. int a=450;
+                    char*p=(char*)&a;              <- result is -62 because the the last byte have sign bit and looks like -
+              - a reference of a variable is the adress it holds in the memory
+              - if multiple pointers are declared in one line, all of them needs the * in front
+              - if want to adress the value a pointers ppoint to then the * must be used in front of the pointer
+              - initialize a pointer with NULL if you dont have any other adress to assign to; it is called nullpointer.It signals that the pointer is not intended to point to an accesible memory
+              - when casting is needed from one pointer to an other type of pointer then (pointertype*) is used: char *a; int *j; j=(int*)a; <- beware that the poimter now points to 4 bytes instead of 1 (int->char  garbage after)
+              - common source of errors: dealocated pointers, dereferencing null pointers, improper pointer allignment.Corrupt pointers are hard to track and can result in corrupt memory or loss of data  in ROM
+              - avoid conversion between pointer types.An exception to this rule is definition of memory mapped io adresses, which explicitly depends on the target and compiler and is suplied by EDL
+              - void pointer comes in need when a pointer need to point to different types.It can have the value of any pointer.Disadvantege is that you loose the type safety with it.
+              - dereferencing a void pointer comes always with the typecast!!  void *ptr;int b=10;ptr=&b;a=*((int*)ptr);
+              - pointer to a pointer - points to a pointer that points to a variables memory location <type> **pointername definition.Dereferencing ** pointername
+              - avoid pointer indirection to mroe then 2 levels
+              - pointers to ISR(Interrupt service requests) are stored in a vector table to handle the interrupts
+              - pointers are used to configure the memory mapped procesor specific registers like interrupt configuration registers
+"Memory allignment: - Mechanism to achieving better performance when accessing data
+                    - Computers commonly adres their memory with word sized chunks (generaly have a word size of 4 bytes or 8 bytes)
+              -     - when a variable in memory does not occupie the word length the npadding occurs, (compiler fills the empty place so that the word size occupie more efficiently the memory adresses
+"Unions"      - Unions are like structures , but their fields overlap in memory.The size of the union is the size of the biggest field of it
+              - one posibile solution when is a strong memory exhaustion issue.variables in memory share the same space, so it saves memory
+              - most frequent use is  to give to the same memory are  different interpretations.Like those for registers
+              - anonymus structures are C++ features, many C compilers suport.If the struct does not have a name it is anonymous.Their field can be used if there is no name conflict in the union
+                               typedef union TAG{
+                                    unsigned short Word;
+                                    struct{
+                                       unsigned char MSB;
+                                       unsigned char LSB;
+                                       }
+                                       void main(){
+                                         Word W1;
+                                         unsigned char hbyte, lbyte;
+                                         W1.Word=0x200;
+                                         hbyte=W1.MSB;
+                                         lbyte-W1.LSB;
+                                         }
+              - unions are helpfull to send packets of different sizes, as they can accomodate  different type of sizes for every packet length
+                that consumes different memory size(by using different type of struct in them:
+                 ex. union Packet{
+                         struct {
+                            uint32_t crc      :2;
+                            uint32_t status   :1;
+                            uint32_t payload  :12;
+                            uint32_t bat      :3;
+                            uint32_t sensor   :3;
+                            uint32_t longadr  :8;
+                            uint32_t shortaddr:2;
+                            uint32_t addrmode :1;}packetfields;        <- inside of an union is allowed to define a structure without name with direct instantiation with name
+                         struct {......}anotherstructure;}myunion;
+                         to call the union: myunion.packetfields.crc=0x1;
+
+"Bit Fields"       - Similar to structures, used to denote the bit size o a field.Used to pack bit flags inside an integer.
+                   - bitfields and unions in combinations are frequently used to describe microcontroler registers;
+                   - The bitfield size depends on CPU architectures.It cannot be greater then the integer size
+                          typedef struct TAG{
+                             unsigned f1:1;
+                             unsigned f2:1;
+                             unsigned :2;}             <- reserve space for not used bits
+                             void main(){
+                             flags.f1=1;               <- set flag
+                             flags.f2=0;               <- clear flag
+                             flags^=1;                 <- togle bitflag
+
+"Enumerations"    - Convient way to to declare symbolic constants.The constants become global symbols, their name shall not collide with other symbols name
+                  - useful to represent state value
+                  - enumeration shall be used only in switch cases or for equal or not equal  comparisons.The internal type used to represent the enumeration
+                    is not defined in C(bu is usually an int)
+				  - if an enumeration structure has a field with a name, that name cannot be used in another enumeration!!!!
+
+                                            typedef enum TAG_DAYS{
+                                                Monday,
+                                                Tuesday,
+                                                wednesday,
+                                                Thursday,
+                                                Friday,
+                                                Saturday,
+                                                Sunday,
+                                                NUM_DAYS}Days;
+                                                Days day=Monday;
+                                            void main(){
+                                                if (day==Sunday){}
+                                                switch(day)
+                                                {
+                                                case Tuesday:
+                                                break;
+                                                case Friday:
+                                                break;
+                                                }
+                    - another enum exxmple:
+                                         typedef enum {FRED=0, Jim=1,Eric}name;
+                                         name i;  <- not works
+                                         name=Jim;  <- woks
+                                         int j;
+                                         for (j=FRED;j<ERIC;j++)    <- works
+					- another enum example: 
+					                     enum State {Working = 1, Failed = 0, Freezed = 0};
+ 
+                                         int main()
+                                         {
+                                         printf("%d, %d, %d", Working, Failed, Freezed);      <- prints 1 0 0   <- no need for the enum name
+                                         return 0;
+                                         }
+"Control Flow"      - if(1<i<10) is the same as if ((1<i)&&(i<10))
+                    - In ANSI standard, anything diferent then 0 is true, and 0 is false
+                                    typedef char bool;#define true 0x01;#define false 0x00;
+                                    typedef char bool;enum{true,false};
+                                    typedef enum {true, false} bool;
+                    - in C in if-else statement, else belongs to the first if above that hasnt got an else already .
+                       this statement can be made clear by using {}   if (expr){if (expr2)}else statement;
+                    - /* comments should be used when starting and ending condition blocks if pData!= Null){/* start of if(pData!=Null); a=1;/*end of :if)
+                    - /* nothing should be commented when an else has nothing in it
+                    - tabs for indentation should use 4 spaces
+                    - in conditions, should be made explicit what are we comparing against.char against "\0", integral against 0. if(getnextnumber()) not allowed.
+                    - In C True and false is not defined.Instead compare to a value, or #define TRUE 1; #define FALSE 0
+                    - dont use more then 5 level of nesting, readability is lower
+                    - if we have a complex if statement, better put every condition from the compound on different line
+                    - Its better to put numeric values first, in case a = is lots (1=a instead 1==a, the first will give a compiler error)
+                    - floating point types should not be compared
+                    - switch statements should have a default value - usually it is an error why non of the cases was selected
+                    - every case should have a break, even the default
+                    - if a switch structure would have 2 choice, better use an if else structure
+                    - a switch case should not contain <=>!=| or any other relational operator as it is confusing.also any code after the default is dead code(assuming the default has a break also
+                    - in embedded we must be carefull to stay in a  loop to much
+                    - in case of a for loop dont alter the increment variable inside the for loop.If you need more freedom use a while loop
+                    - when using for loop avoid the double incrementation (for i=1,j=1;i<1;i++,j++)
+                    - beware for the while condition, it may execute forever
+                    - for as well as while can be used with the break; command however it is not advisable. for readability break should be used with switch only
+                    - continue should be avoided if possible
+                    - NULL should be used in comparisons first like if (NULL==comparisonop())
+
+Microcontrolers use to map a lot of registers for peripheral control in memory.This aproach is known as memory mapped IO. and allows to use high level languages
+to deal with registers, in contrast to IO thru a dedicated instruction set like with x86 arhitecture (in/out) instructions).
+A portable but a little ineficient way to acces to registers is by using pointers, initialized with the absolt  adress of the register, like in this example in the old HC11 microcontroler
+                                          #define PORTA (*(volatile unsigned char*) 0x100))
+                                          #define BIT0 0x01
+                                          void main(){
+                                          //write PORTA as a whole
+                                          PORTA = 0x20;
+                                          //set bit
+                                          PORTA |=BIT0;
+                                          //clear bit
+                                          PORTA &= ~BIT0;
+                                          }
+It is very important to use the "volatile" modifier with IO registers, because they change their values outside our program execution flow
+                                          union tPORTA{
+                                          struct{
+                                             unsigned PA0;
+                                             unsigned PA1;
+                                             };
+                                             unsigned char Byte;
+                                             };
+                                          #pragma location =0x100
+                                          volatile union tPORTA PORTA;
+                                          void main(){
+                                               PORTA.byte=0x20;  <- write the register as a whole
+                                               PORTA.PA0=1;      <- set a bit
+                                               PORTA.PA0=0;}     <- clear a bit
+To be able to execute a C code we need: - to initialize all global variables
+                                        - to initialize the stack pointer
+                                        - To call the main function
+                       This code is known as Startup Code , and is frequently used to initialize the clock, watchdog, interrupts before the execution of main
+                       Code that is explicitly intended to beunreachable under some condition hs to be enclosed with an #if  Condition  #endif clause
+Functions - All C code is enclosed in functions.Functions are the main execution unit in C
+            Values are passed to function as arguments.Functions have only one return value.Function need the stack to store the return adress, the
+            calling arguments, local variables, and the return value.This is what happens when we call a function in C:
+                - Store in the STACK(or a register) the return adress
+                - Store in the stack any register that could be overwriten by the function routine
+                - copy in the stack the function argument values
+                - Allocate space in the stack for local variables
+            At the end of the function, the return value should be placed in the stack (or an a special register) and the stack is dealocated in reverse order ,
+            ending with the return value.So the compiler alocates resources in the invers order as he destroys them.This mechanism is regarded as last in-first out. Variables on the stack
+            exists as long as the functions that created them exist.(Heap memory is the dinamicaly allocated memory resides.Runtime memory  allocation can be done with malloc().just sideidea)
+            In C, arguments are copied in the stack from the start. (helps with the variable argument list).By puting the first argument to the last we have the frame pointer pointing to it
+            we have to store in the first argument how many arguments  we have used.(C- Calling convention)
+            In C, the name of the function is just a label containing the adress we use to jump to the function code.That is why it is easy to have pointers to functions
+            These pointers use adress to jump to.We only need to make aware to the compiler which arguments are used and the type of return value so he knows the data structure the pointer points to
+            Arrays are always passed by reference, so any change to them will change the initial array elements.
+            If we pass by reference , every argument that will not be modified will need to have the const keyword before, so if the function will try to modify the parameter it will get a compile error
+            Function pointers allow to implement polymorphism, inheritence and dependency inversion
+                    int*((*fp1)(int))[10];
+                     ^fp1 is a function pointer to a function that receives and integer argument, and returns an array of size 10 of pointers to integers
+                    int*(*(*(arr[5])(void)))(void);
+                     ^arr is an array of 5 elements of function pointers , returning a pointer to a function pointer that returns an int
+
+                           int add(int x,int y){
+                           return x+y;
+                           }
+                           int multiply (int x, int y){
+                           return x*y;
+                           }
+                           void main (void){
+                           int (*ptr)(int,int);
+                           int ret;
+                           //call add
+                           ptr=add;
+                           ret=(*ptr)(3,5);
+                           ptr=multiply;
+                           ret=(*ptr)(5,6);   <- ptr is a polymorphic function
+            Function pointers can be used to implement state handlers, and are used also for notification callbacks - depending from a number (state) , a matrix of pointers to functions will point to
+            the relevant function and will execute that.
+            Best practice is to use typedef for function pointer declarations:
+                                           //function pointer type:
+                                           typedef int (*FP)(int, int char*);
+                                           //callback is a function pointer:
+                                           FP callback
+                                           //callback is a table of lenght 10
+                                           // of function pointers
+                                           FP callbacks[10];
+                                           //the same but without typedefs
+                                           int(*callbacks[10])(int , int char*);
+                                           void main(){
+                                                 void(*p)(void);  <- functioon pointer
+                                                   (*p)();  <- this should be prefered
+                                                    p(); the same with the above statement because the name of the function is an aadress to its memory range
+
+Underflow and overflow:
+------------------------------------------------------------------------------------------
+   - when we deal with unsigned int underfow and overflow can ocur if the sum of them is bigger then the max possible or the difference is smaller then 0
+   - in this cases wraparound happens meaning the sum is modulo max allowed:
+      4294967295+1=0
+	  4294967295+2=1
+	  0-1=4294967295
+	  0-2=4294967294
+Code execution: Arithmetic and bit operations/type casting
+  - unsigned integer aritmetic is always the most efficient one
+  - some microcontrollers dont have instruction to multiplications, divisions or modulo operations(cpu arhitecture must be checked out, otherwise specialy library must be invoked)
+  - float point aritmetics is not supported in embedded systems, and must be avoided by the same reason as previous point
+Type casting: - If the assignments is from a bigger type to a smaller one, the exceeding bytes are truncated
+              - if the asignment is from a smaller type to a bigger type, the zero extension is used if the source type is unsigned, or sign extension is used if the type is signed
+                (zero extension means the empty bits from the promotion is filled with 0, sign extension means that the empty bits are filled with the sign bit)
+              - float conversions not relevant in embedded systems
+              - extra care with the assignments of pointers to integers
+                                  void main(){
+                                  unsigned char q= 254;
+                                  char p;
+                                  int r,s;
+                                  int *pt=&r;
+                                  unsigned int u=700;
+                                  r=q; // zero extension of q
+                                  s=(char) q; // signed extension of q
+                                  p=r;     <= truncate r
+                                  r=u;     <- single copy
+                                  s=(int)pt;   <- store the adress in pt as integer in s
+                                  pt=(int*)r;   <- store integer in r as an adress in pt
+              As general rule, aritmetic and comparison operations must be between types of the same lenght and sign.
+              In case of differencies use the apropiate casting, to make all the operand of the same size and sign
+              If we do casting, we use explicit conversions.
+              Apart of the size of a type, C has the specification of "range of types"
+                                         char<short<int<long
+              Implicit conversion rules has some subtle rules in behind:
+              C always tries to represent types favoring the microcontroler size
+              C always tried to preserve much of possible types of range.Unsigned types use to have a greater range then signed types.
+              For example in an unsigned word fits 65535 and in signed onu 32767.For C that means when no other choise, signed fits better an unsigned
+              In that case any negative part of the signed number could become a big unsigned value
+              In the word example the -32768 becomes 65535 unsigned value
+              because this issues static code analyzeres are giving a warnign when there is no exoplicit type casting
+              when a company is misra complain, it is mandatory to avoid implicit conversioons in the code
+                                ex: long lnum=-1;
+                                    unsigned long unum=1;
+                                    if (lnum<unum)  false , because lnum is promoted to unum and is now 42949667295
+                                ex unsigned char b1=0xAA;
+                                   unsigned char b2=0x55;
+                                   int result;
+                                   result=(b1==~b2);    <- code not working because integer promotion of unsigned char, the not operation not result in 0xAA but in 0xFFFFFFAA
+                                   solution is to truncate the higher bytes after negating b2
+                                   result=(b1==(unsigned char)~b2);
+Bit shifting:- with a signed type, right shifts are always implemented as arythmetic shifts
+             - when logical shifts, when the bits are shifted they are filled with 0 both ways (left or right shift)
+             - when aritmetic shift, when left shifting LSB is filled with 0, Right arithmetic shift moves the bits to the right
+               and the MSB(first bit vacant) is filled with the bit it was in before the shift to preserve the sign bit
+               use cdef.h for use with boolean and bitmask constantss.it is continental specific definitions
+             - The left operand of a bitshift operation must not be signed (otherwise it may change the sign after shifting)
+             - The right hand operand of a shift operation must be between zero and one less the width in bits of the left hand operand
+Code execution, intrerupts: - Intrerupts are the mechanism used to communicate to CPUs the occurence of external events
+                            - Sometimes the events are triggered by the software.We have Software and Hardware intrerupts(external, not controled bt software)
+                              Software intrerupts are triggered with special CPU instructions.Software intrerupts are used to implement operating system services
+                              Exceptions are special intrerupts to notify CPU Errors.NMI intrerupts are special hardware intrerupts, that cannot be masked (temp disable)
+                            - when an intrerupt is triggered, the CPU has to perform a context switch.The CPU has to store registers and last PC Value in the stack, and to jump
+                              to a special intrerupt service routine.
+                            - the adresses of the intrerupt service routines are usualy stored in an Intrerrupt VecTo Table.This table is also located in a memory place well known
+                              by the CPU, in order to fetch the jump adreses
+                            - A reset vector is where the code jumps, when there is a reset or a power up of a microcontroler.A reset is a type of NMI intrerupt
+                            - for C an intrerupt service routine is a special function with no arguments and no retur value.The compiler also have to generate a special return code
+                              in order to reestabilish the original context
+                                                 volatile int timer;
+                                                 #pragma INTERRUPT (timer_interrupt,IRQ)
+                                                 void timer intrerrupt(){
+                                                       timer++;
+                                                 }
+                            - intrerupt vector's table is allocated with memory mapping pragmas, the linker or even special keywords.
+                            - with the presence of intrerrupts we have a raw way of parallel execution of tasks.The context switch of
+                              interrupts could lead to shared variable corruption.
+                              A peripheral device have several internal register which may read from or written to software.These apear just like memory locations and can be treated in the same way.
+                              Typicaly a device register will have bit fields.Such fields may be single bits, groups of bits, or a whole word.There may also be unused bits.
+                              A serial interface may have a 8 bit register with registers looking like this:
+                                              IE-Unused-Unused-Parity-Parity-Baudrate-Baudrate-Baudrate
+                                              Bits 0-2 Baud rate where the value 0-7 have specific significance
+                                              Bits 3-4 Parity where 0=none, 1=even, 2=odd, 3 is an illegal setting
+                                              Bit 7 intrerupt enable
+           Important:       - data types- registers will be unsigned and the size of it (bits) accomodated.Using traditional C data types, 8 bit registers will be declared unsigned char or newer versions uint8_t
+                              if data registers are larger then 8 bit, endianess may be an isue.(MSB-LSB issue)
+                            - compiler optimizations - the compiler will detect multiple accesses to a variable and make the code more efficient by accesing the memory location once, working on the data in CPU register,
+                              then writing back to memory.With a device register it is essential that the actual device is updated exactly by the code when requires to be.Repeated read acces must be honored also.
+                            - avoid using bit fields when adressing device registers
+                            - some ports are write only.Many devices have multiple internal registers, but only respond to a single adress
+                            - A micro controler can have One or more GPIO ports, and a given port may be full N-bits wide, or a given port may be fewer then N-bits.A shortened port exists because chip designers run out of
+                              pins for the extra gpio bits.Ex 28 bit 8-bit microcontroler may dedicate 5 pins to power and GND, and all other pins are available as GPIO.means 2x8 bit ports and 1x7 bit port
+                              A shortened port will still apear as full N-bit port for the CPU, just that the extra bits are unused as they can not transmit valid data.The Data sheets will give the details, and in any case
+                              the unused bits should be masked out before using the port data
+                            - missing or unused bits in configuration registers - very common, sometimes they use just 1 bit.The unused bits may read 0 or undetermined.the data sheet will tell you what values to write to those bits(usually 0)
+                              one reason is that in a future firmware some unused bits may get a use and then your soft will get an undefined behaviour when working with the registers
+                              To sum up:Mask out any unused bits when reading from ports or config registers, and set unused bits as per datasheet when writing to ports or config registers
+                            - Each GPIO port will have a number of data config. registers asociated with it.These registers will access data read as inputs, hold data as outputs, and will allow config settings often for each GPIO pin
+                              depending on the device data direction (input or output), built in pull ups/downs , input histeresis, output drive strength.All GPIO register information will be found in the datasheet.
+                            = GPIO outputs lets you translate logical values within your program to voltage values on output pins."0" will have GND voltage(0 Volts), "1" will have high voltage near Vcc (Vcc Voltage)
+                            - GPIO Inputs use to read value of digital signals.The pin converts the voltage delivered to the pin into a 0 or 1.
+                            - To write to an output means to execute an instruction designed to place the logical value of a data bit located inside the CPU onto an output pin as high or low voltage
+                            - to read an input means to convert the electrical signals from the input pin into 1 and 0 s
+                            - Any uc will have one or more instructions that can read an entire processor word (N bit wide ) into the CPU
+                              a 8 bit uc will have instructions to read 8 bits of input data into the CPU
+                              16 bit uc will have instructions to rea d16 bits of input data , and may also have instructions to read 8 bits of data.32 bit uc will have instructions to read 32 bit of data(will have 16 and 8 bit read capabilities also)
+                            - If we want to read one bit we can use the uc instruction to read a single bit from a field of n bits(but requires assembly simple task)
+                            - to configure a GPIO port as input or output in the Data Direction Register(DDR) we have to set a given bit in the DDR as 1(for output) to configure the GPIO port pin as output
+                            - not necesarry to configure each pin as one at a time, instead an entire port at once.
+                            - On RESET all GPIO pins will be configured as inputs(all bit set to 0)
+                            - sometimes an output can be connected to a bicolor led that will light one color when high voltage and another color when low voltage and yellow when 100h square wave.This case there ar e 2 states active.
+                            - Unused memory  - Setting unused memory to 0x00 is not good idea cause  it is NOP (valid code).Better set it to an illegal value
+                            - All unused IRQ vectors should point to a safe location(endles loop) to ensure full reset.
+                            - Failure of a port - The code example checks for a trigger signal on a specific port
+Inline assembly: - is a non ANSI feature to allow to mix some small assembly instructions
+                                             - it is necesarry when want to acces CPU registers, not mapped in memory
+                                             - To acces special instructions not supported by the compiler
+                                             - the compiler is not smart enough to optimize our code
+                                             - If the assembly code is not small, the better is to write the necessary code in an assembly file, taking care of the ABI secification, and link the code later
+                                             - when you use inline assembly inside a function, you prevent hte compiler to not optimize your function code.This is a tehique used, when you want
+                                               debug code, and you discover the code is removed by compiler optimizations.You can spread inline assembly instructions for NOP operations, to cancell optimizations around
+                                             - setting a port to output (high voltage) if it is not used can mean short circuiting a device atached to it that do not expect voltage on that port.
+                                             - setting a port to input may lead to internal leakage currents if the external voltage is in an undefined state between high and low levels(safe solution  - set the port to input, and providing an external pull down connection)
+                                             - to ensure safe recoverability of hardware malfunctions, the folow issues must be considered:(watchdog trigger must be set so that the failure of dritical task leads to a reset)ok!
+                                             - ports for debugging use must be chosenso that a wrong configuration will be detected at the sample test.wrong configurations will lead to fatal misbehaviour
+                                             - use aplication input for debugging outputs> during the sample test it will be detected that the input is not working like expected (because it is configured as output)
+
+           T_void PREG_v_Disable_IRQ(T-VOID){
+             asm{"mrs r0, cpsr       "};
+             asm("orr r0,  r0, #0x80 ");
+             asm(" msr cpsr, r0      "};
+             }
+           T_VOID PREG_v_ENABLEIRQ(T_VOID){
+              asm("mrs r0, cpsr   ");
+              asm("bic r0,   r0, #0x80");
+              asm(msr cpsr, r0        ");
+              }
+Most of the processor time is limited to a small set of ranges of RAM and CODE.So if we optimize this bottlenecks, the overal execution time gets improved a lot
+Two speed up function calls there are 2 aproaches:
+      - Macros
+      - Inline functions(inline)
+
+      #define Mult (A,B)   A*B
+      int a=5;
+      int b=3;
+      int res=Mult(a+b,a-b);<- wrong, because 5+3*5-3=17 (the compiler does not take into account the intended operator precedence
+
+      #define MULT (A,B) ((A)*(B))    <- ok
+
+Better alternatives to macros are the inline functions, a C++ feature
+this are functions with the "inline" modifier (older compiler could achive with pragmas the same
+Inline means "execute the function as fast as possible" which means inserting the code of the function where is called
+Inline function should be kept static.Global inline functions are not standardized
+Modern compilers have very aggressive optimizations, so they can perform a lot of inlining without the need of adding
+ the inline modifier.But some are better as inlines.
+In AUTOSAR the inline keyword is not used directly.Instead of that , there exists the ccompiler abstraction macro INLINE and LOCAL_INLINE, where
+INLINE is just for any inline keyword, and LOCAL_INLINE for static inline functions.
+
+Building C programs:
+preprocessing->compilation->linking
+after the build of a c program we got an elf file that means executable linked format (debug and executable file)
+
+- peripheral registers
+--------------------------------------------------------------------------------
+Peripheral registers are memory location through the microcontroler comunicates with peripherals
+- ex ethernet mac has a range of memorylocations through which it comunicates (ethernet register maps)
+  Boot Rom , non volatile memory,also has
+- GPIOD port mode register, output type register, output speed register, pull-down register, input data register, output data register
+  bit reset trigger, port configuration lock register, etc are registers with memory locations for a specific GPIO
+- usualy registers are the bit size of the microcontrolers capability (32,64,8,16 bits), each bit has a meaning
+- activating the port means writing an 1 to its emmory location
+  ex. 0x4002_0C00   <- port mode register  (32 bit)
+      0x4002_0X04   <- GPIOD port output type register (32 bit)
+      0x4002_0X08   <- GPIOD port output speed register(32 bit)
+- GPIOD output data register is 32 bit, means every bite is going to a pin (leg on the microcontroler)
+- to acces the pins stat is accesing the coresponding bit in the 32 bit field at the GPIOD memory location
+- activating a periferal means activating a clock for them.until you activate the clock , the periferal is dead and dont take configuration
+  values setted for it
+- once you activate the clock for a peripheral , the peripeheral is ready to take configuration and contorl related commands(values)
+- some microcontrolers are On by default, so there is no need to do any activation on them
+- the gpio pin needs to be set to output to drive a led(give +3 V)
+- if you write 1 to the memory location of the gpio pin the led will light up
+- if you write 0 to the memory adress of the gpio pin, the led will dim
+
+Procedure to turn on the LED:
+           - identify the GPIO PORT used to connect the Led
+           - Identify the GPIO where the Led is connected
+           - Activate the GIPIO Clock (peripheral)
+           - Configure the Gpio pin mode as output
+           - write to the GPIO Pin
+ - to enable the clock for a pin,it is made through peripheral clock control registers of the microcontroler
+ - stm32 has these memory map of the microcontroler: 0x40023800-0x40023bff
+ - The clock enable register has a base adress, and every peripheral has a memory location in the range writen in the manual
+   from the base adress in the memory map
+ - one bit in the adress specified will activate the pin
+ - Adress of the clock control, GPIOD register mode (2 bits for setting because it has 4 state)and Gpio Clock needs to be
+   known to light the led
+   Aplication of bitwise operators: clear the 4th bit:((~(1<<4))&data )
+   To read from a pin the  mode of gpio pin needs to be set to read(it can be found in the microcontroler memory map GPIO Pin mode)
+   The memory adress of the GPIO pins contains 1 bit that points to the pin.we need to read this bit by clearing the whole number except the bit
+   and shifting it to the right with the position number of the bitfield
+     ex. uint_32_t *GPIODreg=((1<<12)&adressofGPIOofpins)>>12) returns the bit value at position 12 in the value of the GPIO register adress
+
+Aligned and unaligned data storage
+--------------------------------------------------------------------------------
+   - the compiler completes  memory to fill in the bytes missing  so the structures be aligned.
+     ex. struct dataset{ char data1;int data 2;char data3;short data4}
+         so the 32 bits
+     ex. struct data{char; int;char; short;}__attribute__((packed))  <-with the attribute packed we can tell c to  not pad the structure elements(no space betweeen
+                                                                       the variables in memory.
+    - the order the fields are declared in the structures makes a difference in the memory.The compiler puts them in memory in order with the length
+      of the bits it is capable.So if we have a char and then int and then short it will be 1 byte for the char, 3 bytes free for 32 bits,4 bytes for the int  and then 2 bytes for short
+      and then 2 bytes free.If we put char->short->int it will be just 1 byte empty because char+short 3 bytes and it is padding 1 byte
+
+- unaligned data increases storage  occupancy
+Compiler optimization flags
+--------------------------------------------------------------------------------
+-O0 <- no optimization, not recomended for production if you have limited space and ram
+       fastest compilation, debugging friendlycode which works with -)0 optimization
+       may not work with -O0+ optimization and needs to be verified
+-O1 <= moderate optimization to decrease memory acces time and code space
+-o2 <- full optimization slow compilation time, not debugging friendly
+-o3 <- full optimiation of O2+ some agressive optimization steps taken by the compiler
+       can cause bugs in the program
+
+Pre-Processor directives:
+--------------------------------------------------------------------------------
+   - Preprocessor directives are used to affect compile time settings
+   - Preprocessor directives are also used to create macros used as textual replacement
+   - begin with the # symbol
+   - they are taking care of in the preprocessing stage of compilation
+   - Macros: #define <identifier> <value>       <- used for textual replaecement aka aliases
+      ex. #define MAX_RECORD 10              <- MAX_RECORD is an identifier
+          #define PI 3.1415
+          #define AREA_OF_CIRCLE(r) Pi*r*r
+	  ex. #ifdef MODULE_TEST
+	     #define STATIC static
+		 #else
+		 #define Static
+		 #endif
+		 
+      - use UPPER CASE LETTERS for macro name definitions tp distinguish them from variables
+      - macro names are not variables, they are identifiers
+      - make sure parantheses surround a macro value
+      - while using function like macros, along operators, always surround operands with parantheses
+   - File inclusion: #include<std lib filename>
+                     #include "user defined file name"
+   - conditional compilation: #ifdef,#endif,#if, #else, #ifndef,#undef <- used to direct the compiler
+                                                                          about compilation
+     - conditional directives help to include or exclude code blocks based on various conditions
+       set in the program.It checks wether the constant expression is 0 or not.If 0 then the code block
+       will not be included in the compilation. if not 0 it will be included in the compilation
+       ex. #if <constant expression>
+            //code block               <- if const expression is true this code will be included in the code
+            #else
+            //other code block
+            #endif
+     - #ifdef directive checks whether the identifier is defined in the program or not.If the identifier is
+        defined, the code block will be included for compilation
+        ex. #ifdef <identifier>         <- <identifier> could be a macro like NEWFEATURE
+            //codeblock                <- if the macro is defined it will include the code block
+            #endif
+        this <identifier> macro is sent as compiler argument for compilation(-D)(compiler->preprocesor->defined symbols->
+                          and <identifier> name. gcc -DNEWFEATURE
+     - to undefine the defines there is #undef <identifier>
+     - #ifndef directive checks whether the identifier is not defined in the program or it is.If the identifier is
+       not defined, the code block will be included for compilation
+     - #if and 'defined' operator is used when want to check definition of multiple marcos using single #if,#ifdef,#ifndef
+       also &&, ||, ! can be used with 'defined' operator
+       ex. #define AREA_CIR
+           #define AREA_TRI
+           #if defined(AREA_CIR) && !defined(AREA_TRI)
+           //code block
+           #endif
+              #error "no macro defined"                   <- no ; at the end or #warning "warning"
+   - Others #error, #pragma
+   - preprocessor directive that x is uneused(could be modified by volatile)
+   Ex. int x __attribute__((unused)) = f();
+   - preprocessor directive that the compiler to allocate the global variable x on a 16-byte boundary
+   Ex. int x __attribute__ ((aligned (16))) = 0;
+
+C optimization tehniques:
+-------------------------------------------------------------------------------------------------------------
+
+   - optimizations are needed for cpu speed increase, less memory occupancy, lesser resource use
+   - more then 90% of the computation time is consumed by 10-20% of the code
+   - finding hotspots is critical and profiler plays a rolehere
+   - analize each hotspot and optimize it
+Types of optimizations:
+   - Algorithm specific - platform independent
+                        - reduction of complexity of algoritms by reducing the number of computatations
+   - Processor specific - platform dependent
+                        - tune the compiler settings optimally
+                        - restructuring code , making functions the rigth size to suit the compiler
+                        - keeping the processor arhitecture/limitation in mind whil writing code
+                        - requires compiler settings and options
+                        - disassembly produced by compiler
+                        - assembly coding
+
+  						
+The C programming language
+ARM arhitecture Reference manual
+Programming microcontrolers in C
+Using the GNU compiler collection
+C99 specification
+IAR c/C++ development guide for arm
+
